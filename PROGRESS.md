@@ -19,7 +19,7 @@ don't re-discover it.
 |---|---|---|---|---|
 | Science Pre-Medical | **DECLARED** | 31-07-2026 | `pdfs/pm_part2.pdf` (180 pp) | `rollNumbers/pm_rolls.txt` — **14,207** (300006–390783) |
 | Science Pre-Engineering | **DECLARED** | 17-08-2026 | `pdfs/se_part2.pdf` (154 pp) | `rollNumbers/se_rolls.txt` — **9,913** (800001–898101) |
-| Science General | **DECLARED** | 27-08-2026 | `pdfs/sg_part2.pdf` (3.5 MB) | → `rollNumbers/sg_rolls.txt` (6xxxxx pattern) |
+| Science General | **DECLARED** | 27-08-2026 | `pdfs/sg_part2.pdf` (135 pp) | `rollNumbers/sg_rolls.txt` — **10,510** (600001–688451) |
 | Humanities Regular/Private | DECLARED | 07/31-08-2026 | on board site | not downloaded |
 | Economics / Special candidates | DECLARED | 31-07-2026 | on board site | not downloaded |
 | Commerce | not announced | — | — | — |
@@ -139,7 +139,7 @@ mitmproxy --listen-port 8080
 ## 6. Open items / next steps
 
 1. **🔴 Watch the API** — poll `https://api.pksol.com/parameters`; the moment 2026 codes appear with `value`+`faculty` format, bulk search works as-is. Quick check: `curl https://api.pksol.com/parameters`.
-2. **🟡 Extract SG rolls** — run extractor on `pdfs/sg_part2.pdf` to generate `rollNumbers/sg_rolls.txt`.
+2. **✅ Extract SG rolls** — DONE. 10,510 rolls (600001–688451) saved to `rollNumbers/sg_rolls.txt`.
 3. **🟡 Trace the app's API** — use mitmproxy to capture the BIEK app's network traffic. The app works but the web API doesn't — finding the app's endpoint could unlock 2026 data immediately.
 4. **When data loads:** test whether the Part I roll works in the search (`roll_no=<part1 roll>`, `value=reg-p2-a-2026`) — one request per roll, cheap to try.
 5. **Optional:** gazette parser to build results CSV directly from PDFs (roll + marks + grade only — **no names**, so it's a partial fallback while the API is empty).
