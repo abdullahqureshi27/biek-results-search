@@ -9,9 +9,22 @@ wheels/
 # Virtual environments
 .venv
 
+# Environment & Secrets
+.env
+.env.*
+.env.local
+.env.*.local
+*.env
+
+# Databases & local caches
+*.db
+*.sqlite
+*.sqlite3
+
 # Local storage / user data
 storage.md
 cookies.txt
 # Roll number files are tracked (uncomment line below to ignore all)
 # *.txt
+
 
