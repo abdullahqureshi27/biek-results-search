@@ -33,6 +33,12 @@ HEADERS = {
     "User-Agent": "Dart/3.4 (dart:io)"
 }
 
+# Create thread-safe session with connection pooling
+session = requests.Session()
+adapter = requests.adapters.HTTPAdapter(pool_connections=50, pool_maxsize=50, max_retries=3)
+session.mount("http://", adapter)
+session.mount("https://", adapter)
+
 # All faculties (ordered by most common)
 FACULTIES = [
     ("sg", "Science General"),
@@ -57,8 +63,8 @@ progress = {
 }
 
 
-def search_roll(roll_no: str, faculty: str, exam_type: str, delay: float = 0.05) -> Optional[Dict]:
-    """Search for a roll number with specific faculty and exam type."""
+def search_roll(roll_no: str, faculty: str, exam_type: str, delay: float = 0.05, max_retries: int = 4) -> Optional[Dict]:
+    """Search for a roll number with specific faculty and exam type, with automatic retry on server glitch."""
     payload = {
         "faculty": faculty,
         "value": exam_type,
@@ -66,35 +72,50 @@ def search_roll(roll_no: str, faculty: str, exam_type: str, delay: float = 0.05)
         "matric_roll_no": roll_no
     }
 
-    try:
-        response = requests.post(
-            API_URL,
-            json=payload,
-            headers=HEADERS,
-            timeout=10
-        )
+    for attempt in range(max_retries):
+        try:
+            response = session.post(
+                API_URL,
+                json=payload,
+                headers=HEADERS,
+                timeout=12
+            )
 
-        if response.status_code == 200:
-            data = response.json()
-            detail = data.get("detail", {})
+            if response.status_code == 200:
+                try:
+                    data = response.json()
+                except Exception:
+                    time.sleep(1.0 * (attempt + 1))
+                    continue
 
-            if detail.get("roll_no") and detail.get("applicant_name"):
-                return {
-                    "roll_no": roll_no,
-                    "faculty": faculty,
-                    "exam_type": exam_type,
-                    "name": detail.get("applicant_name"),
-                    "father_name": detail.get("father_name"),
-                    "marks": detail.get("secured_total", 0),
-                    "grade": detail.get("grade", ""),
-                }
+                detail = data.get("detail", {})
 
-        time.sleep(delay)
-        return None
+                if detail and detail.get("applicant_name"):
+                    return {
+                        "roll_no": roll_no,
+                        "faculty": faculty,
+                        "exam_type": exam_type,
+                        "name": detail.get("applicant_name"),
+                        "father_name": detail.get("father_name"),
+                        "marks": detail.get("secured_total", 0),
+                        "grade": detail.get("grade", ""),
+                    }
+                else:
+                    time.sleep(delay)
+                    return None
 
-    except Exception:
-        time.sleep(delay)
-        return None
+            elif response.status_code in [429, 500, 502, 503, 504]:
+                time.sleep(1.5 * (attempt + 1))
+                continue
+            else:
+                time.sleep(delay)
+                return None
+
+        except Exception:
+            time.sleep(1.5 * (attempt + 1))
+            continue
+
+    return None
 
 
 def search_roll_all_combinations(roll_no: str, delay: float = 0.05, specific_faculty: Optional[str] = None) -> Optional[Dict]:
@@ -180,20 +201,41 @@ def run_search(output_file: str, workers: int = 10, delay: float = 0.05,
         roll_numbers = [str(r) for r in range(start_roll, end_roll + 1)]
         range_str = f"Range: {start_roll:,} to {end_roll:,}"
 
-    # Initialize output file with header
+    # Check existing output file for auto-resume
+    existing_rolls = set()
+    file_exists = os.path.exists(output_file) and os.path.getsize(output_file) > 0
+    if file_exists:
+        try:
+            with open(output_file, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    if row.get("roll_no"):
+                        existing_rolls.add(str(row["roll_no"]).strip())
+        except Exception:
+            pass
+
     out_dir = os.path.dirname(output_file)
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
-    with open(output_file, 'w', newline='', encoding='utf-8') as f:
-        writer = csv.DictWriter(f, fieldnames=[
-            "roll_no", "name", "father_name", "marks", "grade",
-            "faculty", "faculty_name", "exam_type"
-        ])
-        writer.writeheader()
+
+    if not file_exists or not existing_rolls:
+        # Initialize new output file with header
+        with open(output_file, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.DictWriter(f, fieldnames=[
+                "roll_no", "name", "father_name", "marks", "grade",
+                "faculty", "faculty_name", "exam_type"
+            ])
+            writer.writeheader()
+    else:
+        print(f"Resuming: Found {len(existing_rolls):,} students already saved in {output_file}.")
+
+    # Filter rolls to search: skip already found rolls
+    pending_rolls = [r for r in roll_numbers if r not in existing_rolls]
+    total_to_check = len(pending_rolls)
 
     progress["start_time"] = time.time()
     progress["checked"] = 0
-    progress["found"] = 0
+    progress["found"] = len(existing_rolls)
 
     # Determine faculty search info
     if specific_faculty:
@@ -205,7 +247,9 @@ def run_search(output_file: str, workers: int = 10, delay: float = 0.05,
     print(f"BIEK Regular Part II 2026 Roll Search")
     print(f"=" * 60)
     print(f"{range_str}")
-    print(f"Total: {total:,} roll numbers")
+    print(f"Total in file: {total:,} roll numbers")
+    if existing_rolls:
+        print(f"Already saved: {len(existing_rolls):,} | To query: {total_to_check:,}")
     print(f"Workers: {workers}")
     print(f"Exam: Regular Part II 2026")
     print(f"{faculty_info}")
@@ -213,12 +257,12 @@ def run_search(output_file: str, workers: int = 10, delay: float = 0.05,
     print()
 
     start_time = time.time()
-    found_count = 0
+    found_count = len(existing_rolls)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
         futures = {
             executor.submit(worker, roll, output_file, delay, specific_faculty): roll
-            for roll in roll_numbers
+            for roll in pending_rolls
         }
 
         completed = 0
@@ -231,21 +275,22 @@ def run_search(output_file: str, workers: int = 10, delay: float = 0.05,
                 # Print found students
                 print(f"  FOUND: {result['roll_no']} | {result['name'][:30]} | {result['faculty_name']} | {result['exam_type']}")
 
-            # Progress update every 500
-            if completed % 500 == 0:
+            # Progress update every 100
+            if completed % 100 == 0 or completed == total_to_check:
                 elapsed = time.time() - start_time
-                eta = get_eta(completed, total, elapsed)
-                rate = completed / elapsed * 60
-                print(f"[{completed:,}/{total:,}] Found: {found_count:,} | Rate: {rate:.0f}/min | ETA: {eta}")
+                eta = get_eta(completed, total_to_check, elapsed)
+                rate = completed / elapsed * 60 if elapsed > 0 else 0
+                print(f"[{completed:,}/{total_to_check:,}] Found in file: {found_count:,} | Rate: {rate:.0f}/min | ETA: {eta}")
 
     elapsed = time.time() - start_time
     print()
     print(f"=" * 60)
     print(f"COMPLETED!")
-    print(f"Roll numbers checked: {total:,}")
-    print(f"Students found: {found_count:,}")
+    print(f"New rolls checked: {total_to_check:,}")
+    print(f"Total students saved in file: {found_count:,}")
     print(f"Total time: {elapsed/60:.1f} minutes")
-    print(f"Average rate: {total/elapsed*60:.0f} rolls/minute")
+    if elapsed > 0:
+        print(f"Average rate: {total_to_check/elapsed*60:.0f} rolls/minute")
     print(f"Results saved to: {output_file}")
 
 
