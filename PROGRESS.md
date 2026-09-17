@@ -1,28 +1,29 @@
 # Project Progress & Research Notes
 
-**Last updated: 2026-08-28**
+**Last updated: 2026-09-18**
 
 This file is the single source of truth for where the project stands. Read this
 first before working on the project — it records everything we researched so we
 don't re-discover it.
 
-> **Quick status:** All 3 Part II 2026 results are declared. PDFs are downloaded.
-> The pksol web API is in a broken/transitional state — the BIEK mobile app works
-> but the public API returns "No data found". We're waiting for PKSOL to update
-> the web API. See Section 2 for details.
+> **Quick status:** 🎉 **BREAKTHROUGH: The API endpoint mystery is SOLVED!**
+> Analysis of the official BIEK Android app (`com.biek.edu.app`, Flutter binary)
+> revealed that while the broken web portal uses `api.pksol.com`, the mobile app uses
+> **`http://api.biekedu.com/search`**.
+> Part II 2026 data is fully live and populated on this endpoint. All scripts
+> (`biek_scraper.py`, `bulk_search_all.py`) have been updated and verified with live lookups!
 
 ---
 
 ## 1. Current Status (BIEK Part II 2026)
 
-| Group | Part II 2026 status | Gazetted on | Gazette PDF | Rolls extracted |
-|---|---|---|---|---|
-| Science Pre-Medical | **DECLARED** | 31-07-2026 | `pdfs/pm_part2.pdf` (180 pp) | `rollNumbers/pm_rolls.txt` — **14,207** (300006–390783) |
-| Science Pre-Engineering | **DECLARED** | 17-08-2026 | `pdfs/se_part2.pdf` (154 pp) | `rollNumbers/se_rolls.txt` — **9,913** (800001–898101) |
-| Science General | **DECLARED** | 27-08-2026 | `pdfs/sg_part2.pdf` (135 pp) | `rollNumbers/sg_rolls.txt` — **10,510** (600001–688451) |
-| Humanities Regular/Private | DECLARED | 07/31-08-2026 | on board site | not downloaded |
-| Economics / Special candidates | DECLARED | 31-07-2026 | on board site | not downloaded |
-| Commerce | not announced | — | — | — |
+| Group | Part II 2026 status | Gazetted on | Gazette PDF | Rolls extracted | API Status |
+|---|---|---|---|---|---|
+| Science Pre-Medical | **DECLARED** | 31-07-2026 | `pdfs/pm_part2.pdf` (180 pp) | `rollNumbers/pm_rolls.txt` — **14,207** (300006–390783) | **VERIFIED WORKING** |
+| Science Pre-Engineering | **DECLARED** | 17-08-2026 | `pdfs/se_part2.pdf` (154 pp) | `rollNumbers/se_rolls.txt` — **9,913** (800001–898101) | **VERIFIED WORKING** |
+| Science General | **DECLARED** | 27-08-2026 | `pdfs/sg_part2.pdf` (135 pp) | `rollNumbers/sg_rolls.txt` — **10,510** (600001–688451) | **VERIFIED WORKING** |
+| Humanities Regular/Private | DECLARED | 07/31-08-2026 | on board site | not downloaded | supported (`hmt`) |
+| Commerce | not announced | — | — | — | supported (`com`) |
 
 Gazette URLs (official board site):
 `https://www.biek.edu.pk/Result-2026/Annual/Part-II/<NAME>.pdf`
@@ -36,53 +37,45 @@ Gazette URLs (official board site):
 
 ---
 
-## 2. The Results API (how full details are fetched)
+## 2. The Results API (Mobile App Production Endpoint)
 
-- **Endpoint:** `POST https://api.pksol.com/search` — same API the Part I project used.
-- **Official portal that uses it:** `https://biekresult.pksol.com/` (confirmed by reading its JS).
+- **Production Endpoint:** `POST http://api.biekedu.com/search`
+- **Parameters Endpoint:** `GET http://api.biekedu.com/parameters`
+  - Returns live 2026 exam codes: `reg-p2-a-2026` (Regular) and `pvt-p2-a-2026` (Private)
+- **Headers:**
+  ```http
+  User-Agent: Dart/3.4 (dart:io)
+  Content-Type: application/json; charset=utf-8
+  ```
 - **Payload:**
   ```json
-  {"faculty": "sm", "value": "reg-p2-a-2026", "roll_no": "312204", "matric_roll_no": "312204"}
+  {"faculty": "sg", "value": "reg-p2-a-2026", "roll_no": "607192"}
   ```
   - `faculty`: sm | se | sg | hmt | com
-  - `value` = exam code, format `reg-{p1|p2}-{a|s}-{year}` (`a` = annual, `s` = supply)
-  - `matric_roll_no` is optional (portal only sends it if filled)
-- **Response:** `detail: {roll_no, applicant_name, father_name, secured_total, grade}` + `result: {theory[], practical[]}`
-- **Live list of valid exam codes:** `GET https://api.pksol.com/parameters`
+  - `value`: `reg-p2-a-2026` or `pvt-p2-a-2026`
+  - `matric_roll_no`: optional
+- **Response Format:**
+  ```json
+  {
+    "detail": {
+      "roll_no": 607192,
+      "applicant_name": "MUHAMMAD ABDULLAH",
+      "father_name": "MUHAMMAD MOBIN QURESHI",
+      "secured_total": 582,
+      "grade": "C"
+    },
+    "result": { "theory": [], "practical": [] }
+  }
+  ```
+- **When Roll Is Not Found:**
+  ```json
+  {"detail":{"roll_no":null,"applicant_name":null,"father_name":null,"secured_total":null,"grade":null},"result":{"theory":[],"practical":[]}}
+  ```
 
-### ⚠️ CRITICAL: the API is in a BROKEN / TRANSITIONAL state
-
-**What happened (August 2026):**
-PKSOL changed the API field format but hasn't fully deployed it:
-
-| Aspect | Old format | New format |
-|---|---|---|
-| Exam code field | `exam_code` | `value` |
-| Faculty field | *(not required)* | `faculty` (required) |
-| Old format result | 500 error (missing `faculty`) | — |
-| New format result | — | `No data found` (even for 2025 rolls) |
-
-**Current API state (2026-08-28):**
-- `/parameters` lists only 3 old 2025 exam codes
-- Website dropdown (`biekresult.pksol.com`) only shows 2025 Supply options
-- New format (`value`+`faculty`) accepts requests but returns `No data found` for everything
-- Old format (`exam_code`) throws 500 error
-- **The BIEK mobile app (`com.biek.edu.app`) WORKS** — it uses the same `value`+`faculty` format and has 2026 data
-- The app likely uses a different API URL or requires authentication that isn't publicly documented
-
-**Verified working example (from app screenshots):**
-```json
-POST https://api.pksol.com/search
-{"faculty":"sg","value":"reg-p2-a-2026","roll_no":"607192"}
-→ Name: MUHAMMAD ABDULLAH, Father: MUHAMMAD MOBIN QURESHI, Marks: 582, Grade: C, PASS
-```
-
-**Conclusion:** The scripts are ready for the new format. Once PKSOL loads 2026 data into the web API, bulk search will work immediately.
-
-**Exam codes tested and rejected:** `reg-p2-2026`, `reg-p2-annual-2026`, `p2-a-2026`, `reg-part2-2026`, `reg-sg-p2-a-2026`, plus int/GET/cookie+CSRF variants.
-
-**How to find the app's real API (if needed):**
-Use mitmproxy to intercept the app's network traffic:
+### 💡 Root Cause of Past Confusion (`api.pksol.com` vs `api.biekedu.com`):
+PKSOL maintains two domains:
+1. `api.pksol.com`: The legacy web API used by `biekresult.pksol.com`, which remains unpopulated for 2026 (returns `No data found`).
+2. `api.biekedu.com`: The dedicated backend used by the official Flutter mobile app (`com.biek.edu.app`), which has all 2026 data live. Note: use HTTP (`http://`), as HTTPS handshake on this host can reset under certain TLS configurations.
 ```bash
 pip install mitmproxy
 mitmproxy --listen-port 8080
@@ -138,13 +131,12 @@ mitmproxy --listen-port 8080
 
 ## 6. Open items / next steps
 
-1. **🔴 Watch the API** — poll `https://api.pksol.com/parameters`; the moment 2026 codes appear with `value`+`faculty` format, bulk search works as-is. Quick check: `curl https://api.pksol.com/parameters`.
-2. **✅ Extract SG rolls** — DONE. 10,510 rolls (600001–688451) saved to `rollNumbers/sg_rolls.txt`.
-3. **🟡 Trace the app's API** — use mitmproxy to capture the BIEK app's network traffic. The app works but the web API doesn't — finding the app's endpoint could unlock 2026 data immediately.
-4. **When data loads:** test whether the Part I roll works in the search (`roll_no=<part1 roll>`, `value=reg-p2-a-2026`) — one request per roll, cheap to try.
-5. **Optional:** gazette parser to build results CSV directly from PDFs (roll + marks + grade only — **no names**, so it's a partial fallback while the API is empty).
-6. **Optional:** college-wise positional mapping tool (Part I roll → candidate Part II roll) — approximation only, needs manual verification.
-7. **Cleanup:** `pdfplumber` is installed in `.venv` but not declared in `pyproject.toml` — decide whether to keep (used for layout extraction) or remove.
+1. **✅ Discover & verify Mobile App API** — DONE! Found `http://api.biekedu.com/search`, fully working for Part II 2026 data.
+2. **✅ Extract all Part II rolls** — DONE (PM: 14,207, SE: 9,913, SG: 10,510).
+3. **✅ Update scripts** — DONE (`biek_scraper.py` and `bulk_search_all.py` configured with `http://api.biekedu.com/search`).
+4. **Ready for bulk execution:** Run `bulk_search_all.py` to produce full CSV results for each faculty group.
+5. **Optional:** test whether Part I roll numbers match in the search endpoint.
+6. **Cleanup:** `pdfplumber` is installed in `.venv` — declare in `pyproject.toml` or keep as optional tool.
 
 ---
 
@@ -160,14 +152,12 @@ python scripts/biek_scraper.py --file rollNumbers/pm_rolls.txt --faculty sm --ou
 
 # Fast parallel bulk search
 python scripts/bulk_search_all.py --file rollNumbers/pm_rolls.txt --faculty sm --output results/pm_results.csv --workers 20
+python scripts/bulk_search_all.py --file rollNumbers/sg_rolls.txt --faculty sg --output results/sg_results.csv --workers 20
+python scripts/bulk_search_all.py --file rollNumbers/se_rolls.txt --faculty se --output results/se_results.csv --workers 20
 
 # Check API exam codes
-curl https://api.pksol.com/parameters
+curl http://api.biekedu.com/parameters
 
-# Test one roll against the API (new format: value + faculty)
-curl -s -X POST https://api.pksol.com/search -H "Content-Type: application/json" \
-  -d '{"faculty":"sg","value":"reg-p2-a-2026","roll_no":"607192"}'
-
-# Trace the BIEK app's real API (requires phone proxy setup)
-pip install mitmproxy && mitmproxy --listen-port 8080
+# Test one roll against the API
+python -c "import requests; print(requests.post('http://api.biekedu.com/search', json={'faculty':'sg','value':'reg-p2-a-2026','roll_no':'607192'}, headers={'User-Agent':'Dart/3.4 (dart:io)'}).text)"
 ```

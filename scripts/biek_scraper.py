@@ -1,10 +1,10 @@
 """
 BIEK Results Scraper
-Board of Intermediate Education Karachi - Bulk Result Lookup
+Board of Intermediate Education Karachi - Result Lookup (Part II 2026)
 
 Usage:
-    python biek_scraper.py --roll-numbers 716937 716938 716939
-    python biek_scraper.py --file roll_numbers.txt --output results.csv
+    python scripts/biek_scraper.py --roll-numbers 607192 615380 --faculty sg
+    python scripts/biek_scraper.py --file rollNumbers/sg_rolls.txt --faculty sg --output results/sg_results.csv
 """
 
 import requests
@@ -14,8 +14,8 @@ import argparse
 import time
 from typing import List, Dict, Optional
 
-# API Configuration
-API_URL = "https://api.pksol.com/search"
+# API Configuration (Mobile App Production Endpoint)
+API_URL = "http://api.biekedu.com/search"
 
 # Faculty codes mapping (with display names)
 FACULTY_CODES = {
@@ -38,13 +38,13 @@ FACULTY_NAMES = {
 # Exam type codes mapping (Regular Part II 2026 by default)
 TYPE_CODES = {
     "regular part ii": "reg-p2-a-2026",
-    "private part ii": "pri-p2-a-2026"
+    "private part ii": "pvt-p2-a-2026"
 }
 
-# Default headers
+# Default headers matching the mobile app
 HEADERS = {
-    "Content-Type": "application/json",
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    "Content-Type": "application/json; charset=utf-8",
+    "User-Agent": "Dart/3.4 (dart:io)"
 }
 
 
@@ -130,10 +130,24 @@ def extract_student_info(result_data: Dict) -> Dict:
     try:
         data = result_data.get("data", {})
         detail = data.get("detail", {})
-        grade = detail.get("grade", "").lower()
+        
+        # Check if student was actually found
+        if not detail or not detail.get("applicant_name"):
+            return {
+                "name": "N/A",
+                "father_name": "N/A",
+                "marks": "N/A",
+                "grade": "N/A",
+                "faculty": FACULTY_NAMES.get(result_data.get("faculty", ""), result_data.get("faculty", "N/A")),
+                "status": "NOT FOUND",
+                "error": "No data found for this roll number"
+            }
+
+        grade_raw = detail.get("grade")
+        grade = str(grade_raw).lower() if grade_raw is not None else ""
 
         # Determine pass/fail status based on grade
-        if grade in ["pass", "a", "b", "c", "d"]:
+        if grade in ["pass", "a-1", "a", "b", "c", "d", "e"]:
             status = "PASS"
         elif grade in ["fail", "f"]:
             status = "FAIL"

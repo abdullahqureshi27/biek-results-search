@@ -16,6 +16,7 @@ Usage:
     python bulk_search_all.py --start 700000 --end 700100 --faculty sg --output test.csv --workers 5
 """
 
+import os
 import requests
 import csv
 import time
@@ -25,11 +26,11 @@ from threading import Lock
 from typing import List, Dict, Optional
 from datetime import datetime
 
-# API Configuration
-API_URL = "https://api.pksol.com/search"
+# API Configuration (Mobile App Production Endpoint)
+API_URL = "http://api.biekedu.com/search"
 HEADERS = {
-    "Content-Type": "application/json",
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    "Content-Type": "application/json; charset=utf-8",
+    "User-Agent": "Dart/3.4 (dart:io)"
 }
 
 # All faculties (ordered by most common)
@@ -180,6 +181,9 @@ def run_search(output_file: str, workers: int = 10, delay: float = 0.05,
         range_str = f"Range: {start_roll:,} to {end_roll:,}"
 
     # Initialize output file with header
+    out_dir = os.path.dirname(output_file)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
     with open(output_file, 'w', newline='', encoding='utf-8') as f:
         writer = csv.DictWriter(f, fieldnames=[
             "roll_no", "name", "father_name", "marks", "grade",
