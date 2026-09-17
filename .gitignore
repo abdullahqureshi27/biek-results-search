@@ -27,4 +27,8 @@ cookies.txt
 # Roll number files are tracked (uncomment line below to ignore all)
 # *.txt
 
+# Scraped results output
+results/*.csv
+!results/.gitkeep
+
 
